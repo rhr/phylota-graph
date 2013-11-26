@@ -3,14 +3,12 @@
 
 import ivy, re
 
-badcolon = re.compile(r'[:][^0-9]')
-
 outf = open('pb/pb184.readable.trees','w')
 failed = open('pb/pb184.unreadable.trees','w')
 with open('pb/pb.dmp.maximalnr.trees.184') as f:
     for line in f:
-        line = line.replace('_(','_').replace(')_','_').replace(',_','_')
-        line = line.replace('BOLD:','BOLD_')
+        for bad, good in (('_(','_'),(')_','_'),(',_','_'),('BOLD:','BOLD_')):
+            line = line.replace(bad, good)
         pbtree, s = line.split()
         try:
             r = ivy.newick.parse(s)

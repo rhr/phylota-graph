@@ -1,42 +1,13 @@
 from ivy import treegraph as tg
 
-merged = {}
-with open('ncbi/merged.dmp') as f:
-    for line in f:
-        v = line.split()
-        merged[int(v[0])] = int(v[2])
-
-g = tg.load_taxonomy_graph('ncbi/ncbi.xml.gz')
-## for v in g.vertices():
-##     if g.vertex_name[v]=='Viridiplantae': break
-## plants = v
-## g = tg.load_taxonomy_graph('ncbi/viridiplantae.filt.xml.gz')
-
-def check_trees():
-    outf = open('pb184.filt','w')
-    failed = open('pb184.nonparsable','w')
-    with open('pb.dmp.nr.trees.184') as f:
-        for line in f:
-            pbtree, s = line.split()
-            try:
-                r = tg.ivy.tree.read(s)
-                for lf in r.leaves():
-                    w = lf.label.split('_')
-                    assert w[-1].startswith('ti')
-                    lf.taxid = int(w[-1][2:])
-                    assert lf.taxid
-                for n in r.postiter():
-                    n.parent = None; del n.children
-                outf.write(line)
-            except:
-                print 'failed:', pbtree
-                failed.write(line)
-    outf.close()
-    failed.close()
-
-def color_vertices(g, tg, taxv):
-    nxt, bck = g.hindex[g.taxid_vertex[taxv]]
-    colored = tg.new_vertex_property('bool')
+def color_vertices(taxonomy, treegraph, taxv):
+    """
+    taxv: NCBI taxon id
+    
+    Color the vertices of `treegraph` that are members of taxon `taxv`
+    """
+    nxt, bck = taxonomy.hindex[taxonomy.taxid_vertex[taxv]]
+    colored = treegraph.new_vertex_property('bool')
     seen = set()
 
     lvs = set()
@@ -87,7 +58,7 @@ def color_vertices(g, tg, taxv):
 
     return colored, c
 
-def proc(line, probs):
+def proc(g, line, probs, merged):
     pbtree, s = line.split()
     print 'processing', pbtree
     r = tg.ivy.tree.read(s)
@@ -198,16 +169,20 @@ def proc(line, probs):
 
     return newicks
 
-outf = open('pb184.filt.subtrees','w')
-probs = open('pb184.filt.problem_subtrees','w')
-with open('pb184.filt') as f:
-    ## flag = True
-    ## while flag:
-    ##     line = f.readline()
-    ##     if line.startswith('ti85819_ci81'): flag = False
-    for line in f:
-        pbtree = line.split()[0]
-        for k, names, s in proc(line, probs):
-            outf.write('%s\t%s\t%s\t%s;\n' % (pbtree, k, names, s))
-outf.close()
-probs.close()
+if __name__ == "__main__":
+    merged = {}
+    with open('ncbi/merged.dmp') as f:
+        for line in f:
+            v = line.split()
+            merged[int(v[0])] = int(v[2])
+
+    g = tg.load_taxonomy_graph('ncbi/ncbi.xml.gz')
+
+    probs = open('pb/pb184.readable.problem_subtrees','w')
+    with open('pb/pb184.readable.trees') as f:
+        for line in f:
+            pbtree = line.split()[0]
+            for k, names, s in proc(g, line, probs, merged):
+                outf.write('%s\t%s\t%s\t%s;\n' % (pbtree, k, names, s))
+    outf.close()
+    probs.close()

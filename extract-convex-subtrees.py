@@ -136,6 +136,7 @@ def proc(g, line, merged, probfile, outfile):
                     )
                 ancv = [taxidsubg.taxid_vertex[mrca]]
                 while ancv[-1] != taxv:
+                    # STRANGE EDGE CASES HERE
                     try: ancv.append(ancv[-1].in_neighbours().next())
                     except StopIteration: pass
 

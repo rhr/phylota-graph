@@ -136,7 +136,9 @@ def proc(g, line, merged, probfile, outfile):
                     )
                 ancv = [taxidsubg.taxid_vertex[mrca]]
                 while ancv[-1] != taxv:
-                    ancv.append(ancv[-1].in_neighbours().next())
+                    try: ancv.append(ancv[-1].in_neighbours().next())
+                    except StopIteration: pass
+
                 k = '.'.join([ str(taxidsubg.vertex_taxid[x])
                                for x in ancv ])
                 convex[k] = (rv, p)

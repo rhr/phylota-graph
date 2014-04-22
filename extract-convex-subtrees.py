@@ -1,33 +1,33 @@
 import ivy
 from ivy import treegraph as tg
 
-def color_vertices(taxonomy, treegraph, taxv):
+def color_vertices(taxonomy, treegraph, tid):
     """
-    taxv: NCBI taxon id
+    tid: NCBI taxon id
     
-    Color the vertices of `treegraph` that are members of taxon `taxv`
+    Color the vertices of `treegraph` that are members of taxon `tid`
     """
-    nxt, bck = taxonomy.hindex[taxonomy.taxid_vertex[taxv]]
+    nxt, bck = taxonomy.hindex[taxonomy.taxid_vertex[tid]]
 
     colored = treegraph.new_vertex_property('bool')
     # `colored` is a boolean vertex property map that will flag those
     # vertices in the unrooted treegraph that are in convex subtrees
-    # corresponding to taxon `taxv`
+    # corresponding to taxon `tid`
     
     seen = set()
     lvs = set()
     for v in treegraph.vertices():
-        if v.out_degree() == 1:
+        if v.out_degree() == 1: # leaf
             seen.add(v)
-            taxv = g.vertex(treegraph.vertex_taxv[v])
+            taxv = taxonomy.taxid_vertex[treegraph.vertex_taxid[v]]
             if taxonomy.incertae_sedis[taxv]:
                 p = taxv.in_neighbours().next()
-                pn, pb = g.hindex[p]
+                pn, pb = taxonomy.hindex[p]
                 if nxt >= pn and bck <= pb:
                     colored[v] = 1
                     lvs.add(v)
             else:
-                n, b = g.hindex[taxv]
+                n, b = taxonomy.hindex[taxv]
                 if n >= nxt and b <= bck:
                     colored[v] = 1
                     lvs.add(v)
@@ -41,8 +41,8 @@ def color_vertices(taxonomy, treegraph, taxv):
 
     def check(x):
         i = 0
-        for x in x.out_neighbours():
-            if not colored[x]: i += 1
+        for y in x.out_neighbours():
+            if not colored[y]: i += 1
         return i
 
     verts = gather()
@@ -85,8 +85,9 @@ def proc(g, line, merged, probfile, outfile):
             leaf_tid_counts[lf.taxid] += 1
             if lf.taxid not in g.taxid_vertex and lf.taxid in merged:
                 lf.taxid = merged[lf.taxid]
-            lf.taxv = g.taxid_vertex[lf.taxid]
-            lf.taxid_next, lf.taxid_back = g.hindex[lf.taxv]
+            ## lf.taxv = g.taxid_vertex[lf.taxid]
+            taxv = g.taxid_vertex[lf.taxid]
+            lf.taxid_next, lf.taxid_back = g.hindex[taxv]
             lf.taxid_rootpath = tg.taxid_rootpath(g, lf.taxid)
             for i, x in enumerate(lf.taxid_rootpath):
                 if x not in g.taxid_vertex and x in merged:
@@ -98,7 +99,7 @@ def proc(g, line, merged, probfile, outfile):
         #return []
 
     r.mrca = tg.rootpath_mrca(rps) # taxid of mrca of all tree's leaves
-    r.taxv = g.taxid_vertex[r.mrca] # the taxonomy vertex for the mrca
+
     taxids = set()
     for rp in rps:
         # trim rootpaths: make them terminate with mrca
@@ -113,6 +114,8 @@ def proc(g, line, merged, probfile, outfile):
     taxidsubg = tg.taxid_new_subgraph(g, taxids)
     taxidsubg.vfilt = taxidsubg.new_vertex_property('bool')
 
+    ## r.taxv = taxidsubg.taxid_vertex[r.mrca]
+
     # no need to check for convexity for singleton tip taxa
     for x in [ taxidsubg.taxid_vertex[lf.taxid] for lf in lvs
                if leaf_tid_counts[lf.taxid]==1 ]:
@@ -124,7 +127,7 @@ def proc(g, line, merged, probfile, outfile):
     treegraph.mrca = r.mrca
     print 'mrca:', g.taxid_name(r.mrca)
     treegraph.vertex_taxid = tg.get_or_create_vp(treegraph, 'taxid', 'int')
-    treegraph.vertex_taxv = tg.get_or_create_vp(treegraph, 'taxv', 'int')
+    ## treegraph.vertex_taxv = tg.get_or_create_vp(treegraph, 'taxv', 'int')
     v2lf = {}
     N = len(r)
     verts = treegraph.add_vertex(N)
@@ -133,7 +136,7 @@ def proc(g, line, merged, probfile, outfile):
         n.v = verts.next()
         if not n.children:
             treegraph.vertex_taxid[n.v] = n.taxid
-            treegraph.vertex_taxv[n.v] = int(n.taxv)
+            ## treegraph.vertex_taxv[n.v] = int(n.taxv)
             v2lf[n.v] = n
         if n.parent:
             treegraph.add_edge(n.parent.v, n.v)
@@ -148,10 +151,10 @@ def proc(g, line, merged, probfile, outfile):
         convexity
         """
         tid = taxidsubg.vertex_taxid[taxv]
-        ## print 'checking', tid, taxidsubg.vertex_name[taxv]
+        print 'checking', tid, taxidsubg.vertex_name[taxv]
         p, c = color_vertices(g, treegraph, tid)
         if len(c)==1 and len(c[1])==1: # taxv/tid is convex
-            ## print '...success'
+            print '...success'
             rv = c[1][0] # rv is the root of the convex subtree
             treegraph.set_vertex_filter(p)
             ## lvs = [ x for x in treegraph.vertices() if x.out_degree()==1 ]
@@ -159,21 +162,27 @@ def proc(g, line, merged, probfile, outfile):
             if len(lvs) > 2:
                 # we are only interested in convex subgraphs having
                 # more than 2 leaves
-                mrca = tg.rootpath_mrca(
-                    [ tg.taxid_rootpath(taxidsubg, treegraph.vertex_taxid[lf])
-                      for lf in lvs ]
-                    )
-                ancv = [taxidsubg.taxid_vertex[mrca]]
-                while ancv[-1] != taxv:
-                    # STRANGE EDGE CASES HERE
-                    try: ancv.append(ancv[-1].in_neighbours().next())
-                    except StopIteration: pass
+                rootpaths = []
+                for lf in lvs:
+                    ti = treegraph.vertex_taxid[lf]
+                    tv = taxidsubg.taxid_vertex[ti]
+                    if not taxidsubg.incertae_sedis[tv]:
+                        rootpaths.append(tg.taxid_rootpath(taxidsubg, ti))
+                if rootpaths:
+                    mrca = tg.rootpath_mrca(rootpaths)
+                    print 'traverse: mrca', mrca
+                    ancv = [taxidsubg.taxid_vertex[mrca]]
+                    while ancv[-1] != taxv:
+                        # STRANGE EDGE CASES HERE
+                        try: ancv.append(ancv[-1].in_neighbours().next())
+                        except StopIteration: pass
 
-                k = '.'.join([ str(taxidsubg.vertex_taxid[x])
-                               for x in ancv ])
-                convex[k] = (rv, p)
+                    k = '.'.join([ str(taxidsubg.vertex_taxid[x])
+                                   for x in ancv ])
+                    convex[k] = (rv, p)
             treegraph.set_vertex_filter(None)
         else:
+            treegraph.set_vertex_filter(None)
             for n in taxv.out_neighbours():
                 traverse(n)
 
